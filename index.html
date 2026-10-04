@@ -35,7 +35,7 @@
   const WIDTH = 1000;
   const HEIGHT = 600;
 
-  const SIZES = [40, 70, 100, 130, 150];
+  const SIZES = [50, 70, 100, 120, 150];
   const DIRECTIONS = ["UP", "DOWN", "LEFT", "RIGHT"];
   const TOTAL_TRIALS = 20;
 
@@ -108,7 +108,7 @@
     cSize = item.size;
     direction = item.direction;
 
-    const moveSpeed = randInt(3, 11);
+    const moveSpeed = randInt(3, 12);
     const spawnSides = ["LEFT", "RIGHT", "TOP", "BOTTOM"];
     const side = spawnSides[Math.floor(Math.random() * spawnSides.length)];
     const margin = cSize + 40;
