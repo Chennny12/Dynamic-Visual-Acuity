@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>Dynamic Visual Acuity Test</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #f0f0f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      background-color: #ffffff;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="1000" height="600"></canvas>
+
+<script>
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+
+  const WIDTH = 1000;
+  const HEIGHT = 600;
+
+  const SIZES = [40, 70, 100, 130, 150];
+  const DIRECTIONS = ["UP", "DOWN", "LEFT", "RIGHT"];
+  const TOTAL_TRIALS = 20;
+
+  let state = "READY"; // READY, COUNTDOWN, PLAYING, RESULT
+  let countdownNumber = 3;
+  let countdownTimer = null;
+
+  let trial = 0;
+  let correct = 0;
+  let reactionTimes = [];
+
+  let cX = 0;
+  let cY = 0;
+  let vx = 0;
+  let vy = 0;
+  let cSize = 80;
+  let direction = "RIGHT";
+  let startTime = 0;
+
+  let trialsPool = [];
+
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  function generateTrialsPool() {
+    const baseCombos = [];
+    for (const s of SIZES) {
+      for (const d of DIRECTIONS) {
+        baseCombos.push({ size: s, direction: d });
+      }
+    }
+
+    let pool = shuffle([...baseCombos]);
+    const remainder = TOTAL_TRIALS - pool.length;
+    if (remainder > 0) {
+      const extra = shuffle([...baseCombos]).slice(0, remainder);
+      pool = pool.concat(extra);
+    }
+
+    trialsPool = shuffle(pool).slice(0, TOTAL_TRIALS);
+  }
+
+  function startCountdown() {
+    state = "COUNTDOWN";
+    countdownNumber = 3;
+
+    if (countdownTimer) clearInterval(countdownTimer);
+
+    countdownTimer = setInterval(() => {
+      countdownNumber--;
+      if (countdownNumber <= 0) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        newTrial();
+      }
+    }, 1000);
+  }
+
+  function newTrial() {
+    const item = trialsPool.pop();
+    cSize = item.size;
+    direction = item.direction;
+
+    const moveSpeed = randInt(3, 11);
+    const spawnSides = ["LEFT", "RIGHT", "TOP", "BOTTOM"];
+    const side = spawnSides[Math.floor(Math.random() * spawnSides.length)];
+    const margin = cSize + 40;
+
+    if (side === "LEFT") {
+      cX = -margin;
+      cY = randInt(100, HEIGHT - 100);
+      vx = moveSpeed;
+      vy = 0;
+    } else if (side === "RIGHT") {
+      cX = WIDTH + margin;
+      cY = randInt(100, HEIGHT - 100);
+      vx = -moveSpeed;
+      vy = 0;
+    } else if (side === "TOP") {
+      cX = randInt(100, WIDTH - 100);
+      cY = -margin;
+      vx = 0;
+      vy = moveSpeed;
+    } else if (side === "BOTTOM") {
+      cX = randInt(100, WIDTH - 100);
+      cY = HEIGHT + margin;
+      vx = 0;
+      vy = -moveSpeed;
+    }
+
+    startTime = performance.now();
+    state = "PLAYING";
+  }
+
+  function isOutOfBounds() {
+    const margin = cSize + 60;
+    return (cX < -margin || cX > WIDTH + margin || cY < -margin || cY > HEIGHT + margin);
+  }
+
+  function drawC() {
+    ctx.save();
+    ctx.translate(cX, cY);
+
+    const angles = {
+      RIGHT: 0,
+      DOWN: Math.PI / 2,
+      LEFT: Math.PI,
+      UP: -Math.PI / 2
+    };
+
+    ctx.rotate(angles[direction]);
+    ctx.font = `bold ${cSize}px Arial`;
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("C", 0, 0);
+
+    ctx.restore();
+  }
+
+  function showResult() {
+    ctx.fillStyle = "#000000";
+    ctx.textAlign = "center";
+
+    ctx.font = "bold 48px Arial";
+    ctx.fillText("TEST COMPLETE", WIDTH / 2, 160);
+
+    const accuracy = TOTAL_TRIALS > 0 ? (correct / TOTAL_TRIALS) * 100 : 0;
+    const avgTime = reactionTimes.length > 0
+      ? reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length
+      : 0;
+
+    ctx.font = "28px Arial";
+    ctx.fillText(`Correct: ${correct} / ${TOTAL_TRIALS}`, WIDTH / 2, 240);
+    ctx.fillText(`Accuracy: ${accuracy.toFixed(1)} %`, WIDTH / 2, 290);
+    ctx.fillText(`Average Reaction Time: ${avgTime.toFixed(3)} s`, WIDTH / 2, 340);
+
+    ctx.fillStyle = "#777777";
+    ctx.fillText("Press SPACE to try again", WIDTH / 2, 430);
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+      e.preventDefault();
+    }
+
+    if (state === "READY" || state === "RESULT") {
+      if (e.code === "Space") {
+        trial = 0;
+        correct = 0;
+        reactionTimes = [];
+        generateTrialsPool();
+        startCountdown(); // 啟動倒數計時
+      }
+    } else if (state === "PLAYING") {
+      let answer = null;
+      if (e.code === "ArrowUp") answer = "UP";
+      else if (e.code === "ArrowDown") answer = "DOWN";
+      else if (e.code === "ArrowLeft") answer = "LEFT";
+      else if (e.code === "ArrowRight") answer = "RIGHT";
+
+      if (answer !== null) {
+        const reactionTime = (performance.now() - startTime) / 1000;
+        if (answer === direction) {
+          correct++;
+          reactionTimes.push(reactionTime);
+        }
+
+        trial++;
+        if (trial >= TOTAL_TRIALS) {
+          state = "RESULT";
+        } else {
+          newTrial();
+        }
+      }
+    }
+  });
+
+  function loop() {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    if (state === "READY") {
+      ctx.fillStyle = "#000000";
+      ctx.textAlign = "center";
+      ctx.font = "bold 48px Arial";
+      ctx.fillText("DYNAMIC VISUAL ACUITY TEST", WIDTH / 2, 240);
+      ctx.font = "28px Arial";
+      ctx.fillText("PRESS SPACE TO START", WIDTH / 2, 330);
+
+    } else if (state === "COUNTDOWN") {
+      // 繪製倒數畫面
+      ctx.fillStyle = "#000000";
+      ctx.textAlign = "center";
+      ctx.font = "bold 96px Arial";
+      ctx.fillText(countdownNumber, WIDTH / 2, HEIGHT / 2 + 30);
+
+    } else if (state === "PLAYING") {
+      cX += vx;
+      cY += vy;
+
+      drawC();
+
+      ctx.fillStyle = "#000000";
+      ctx.textAlign = "left";
+      ctx.font = "28px Arial";
+      ctx.fillText(`Trial ${trial + 1} / ${TOTAL_TRIALS}`, 24, 40);
+
+      if (isOutOfBounds()) {
+        trial++;
+        if (trial >= TOTAL_TRIALS) {
+          state = "RESULT";
+        } else {
+          newTrial();
+        }
+      }
+
+    } else if (state === "RESULT") {
+      showResult();
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
