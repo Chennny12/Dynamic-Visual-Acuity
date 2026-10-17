@@ -1,275 +1,596 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>Dynamic Visual Acuity Test</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    body {
-      background-color: #f0f0f0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      font-family: Arial, sans-serif;
-    }
-    canvas {
-      background-color: #ffffff;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-      border-radius: 4px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Rolling Ball Reaction Test</title>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+canvas {
+    width: 1200px;
+    height: 700px;
+    background: #061a36;
+    display: block;
+}
+</style>
 </head>
+
 <body>
 
-<canvas id="gameCanvas" width="1000" height="600"></canvas>
+<canvas id="game" width="1200" height="700"></canvas>
 
 <script>
-  const canvas = document.getElementById("gameCanvas");
-  const ctx = canvas.getContext("2d");
 
-  const WIDTH = 1000;
-  const HEIGHT = 600;
+var canvas = document.getElementById("game");
+var ctx = canvas.getContext("2d");
 
-  const SIZES = [50, 70, 100, 120, 150];
-  const DIRECTIONS = ["UP", "DOWN", "LEFT", "RIGHT"];
-  const TOTAL_TRIALS = 20;
+var W = 1200;
+var H = 700;
 
-  let state = "READY"; // READY, COUNTDOWN, PLAYING, RESULT
-  let countdownNumber = 3;
-  let countdownTimer = null;
+var totalTrials = 20;
+var trial = 0;
+var correct = 0;
 
-  let trial = 0;
-  let correct = 0;
-  let reactionTimes = [];
+var speed = 3;
+var minSpeed = 2;
+var maxSpeed = 8;
 
-  let cX = 0;
-  let cY = 0;
-  let vx = 0;
-  let vy = 0;
-  let cSize = 80;
-  let direction = "RIGHT";
-  let startTime = 0;
+var state = "ready";
 
-  let trialsPool = [];
+var x = 0;
+var y = 0;
+var dx = 0;
+var dy = 0;
 
-  function randInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
+var number = 1;
+var radius = 75;
 
-  function shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-  }
+var rotation = 0;
+var startTime = 0;
 
-  function generateTrialsPool() {
-    const baseCombos = [];
-    for (const s of SIZES) {
-      for (const d of DIRECTIONS) {
-        baseCombos.push({ size: s, direction: d });
-      }
+var reactionTimes = [];
+
+var countdown = 3;
+var countdownTimer = null;
+
+var numbers = [];
+
+
+function createBalancedNumbers() {
+
+    var arr = [];
+
+    // 1-8 each appears twice
+    for (var i = 1; i <= 8; i++) {
+        arr.push(i);
+        arr.push(i);
     }
 
-    let pool = shuffle([...baseCombos]);
-    const remainder = TOTAL_TRIALS - pool.length;
-    if (remainder > 0) {
-      const extra = shuffle([...baseCombos]).slice(0, remainder);
-      pool = pool.concat(extra);
+    // Randomly choose 4 different numbers to appear one extra time
+    var extraNumbers = [];
+
+    while (extraNumbers.length < 4) {
+
+        var n = Math.floor(Math.random() * 8) + 1;
+
+        if (extraNumbers.indexOf(n) === -1) {
+            extraNumbers.push(n);
+        }
     }
 
-    trialsPool = shuffle(pool).slice(0, TOTAL_TRIALS);
-  }
+    for (var j = 0; j < extraNumbers.length; j++) {
+        arr.push(extraNumbers[j]);
+    }
 
-  function startCountdown() {
-    state = "COUNTDOWN";
-    countdownNumber = 3;
+    // Fisher-Yates shuffle
+    for (var k = arr.length - 1; k > 0; k--) {
 
-    if (countdownTimer) clearInterval(countdownTimer);
+        var randomIndex =
+            Math.floor(Math.random() * (k + 1));
 
-    countdownTimer = setInterval(() => {
-      countdownNumber--;
-      if (countdownNumber <= 0) {
+        var temp = arr[k];
+        arr[k] = arr[randomIndex];
+        arr[randomIndex] = temp;
+    }
+
+    return arr;
+}
+
+
+function startGame() {
+
+    trial = 0;
+    correct = 0;
+    speed = 3;
+    reactionTimes = [];
+
+    numbers = createBalancedNumbers();
+
+    startCountdown();
+}
+
+
+function startCountdown() {
+
+    state = "countdown";
+    countdown = 3;
+
+    if (countdownTimer !== null) {
         clearInterval(countdownTimer);
-        countdownTimer = null;
-        newTrial();
-      }
+    }
+
+    countdownTimer = setInterval(function () {
+
+        countdown--;
+
+        if (countdown <= 0) {
+
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+
+            trial = 0;
+
+            newTrial();
+        }
+
     }, 1000);
-  }
+}
 
-  function newTrial() {
-    const item = trialsPool.pop();
-    cSize = item.size;
-    direction = item.direction;
 
-    const moveSpeed = randInt(4, 12);
-    const spawnSides = ["LEFT", "RIGHT", "TOP", "BOTTOM"];
-    const side = spawnSides[Math.floor(Math.random() * spawnSides.length)];
-    const margin = cSize + 40;
+function newTrial() {
 
-    if (side === "LEFT") {
-      cX = -margin;
-      cY = randInt(100, HEIGHT - 100);
-      vx = moveSpeed;
-      vy = 0;
-    } else if (side === "RIGHT") {
-      cX = WIDTH + margin;
-      cY = randInt(100, HEIGHT - 100);
-      vx = -moveSpeed;
-      vy = 0;
-    } else if (side === "TOP") {
-      cX = randInt(100, WIDTH - 100);
-      cY = -margin;
-      vx = 0;
-      vy = moveSpeed;
-    } else if (side === "BOTTOM") {
-      cX = randInt(100, WIDTH - 100);
-      cY = HEIGHT + margin;
-      vx = 0;
-      vy = -moveSpeed;
+    if (trial >= totalTrials) {
+
+        state = "result";
+        return;
+    }
+
+    state = "playing";
+
+    number = numbers[trial];
+
+    var side = Math.floor(Math.random() * 4);
+
+    rotation = 0;
+
+    if (side === 0) {
+
+        x = -radius;
+        y = radius + Math.random() * (H - radius * 2);
+
+        dx = speed;
+        dy = 0;
+
+    } else if (side === 1) {
+
+        x = W + radius;
+        y = radius + Math.random() * (H - radius * 2);
+
+        dx = -speed;
+        dy = 0;
+
+    } else if (side === 2) {
+
+        x = radius + Math.random() * (W - radius * 2);
+        y = -radius;
+
+        dx = 0;
+        dy = speed;
+
+    } else {
+
+        x = radius + Math.random() * (W - radius * 2);
+        y = H + radius;
+
+        dx = 0;
+        dy = -speed;
     }
 
     startTime = performance.now();
-    state = "PLAYING";
-  }
+}
 
-  function isOutOfBounds() {
-    const margin = cSize + 60;
-    return (cX < -margin || cX > WIDTH + margin || cY < -margin || cY > HEIGHT + margin);
-  }
 
-  function drawC() {
+function changeSpeed(isCorrect) {
+
+    if (isCorrect) {
+
+        speed++;
+
+        if (speed > maxSpeed) {
+            speed = maxSpeed;
+        }
+
+    } else {
+
+        speed--;
+
+        if (speed < minSpeed) {
+            speed = minSpeed;
+        }
+    }
+}
+
+
+function answer(value) {
+
+    if (state !== "playing") {
+        return;
+    }
+
+    var reaction = performance.now() - startTime;
+
+    if (value === number) {
+
+        correct++;
+
+        reactionTimes.push(reaction);
+
+        changeSpeed(true);
+
+    } else {
+
+        changeSpeed(false);
+    }
+
+    trial++;
+
+    newTrial();
+}
+
+
+function outside() {
+
+    return (
+        x < -radius * 1.5 ||
+        x > W + radius * 1.5 ||
+        y < -radius * 1.5 ||
+        y > H + radius * 1.5
+    );
+}
+
+
+function drawBall() {
+
     ctx.save();
-    ctx.translate(cX, cY);
 
-    const angles = {
-      RIGHT: 0,
-      DOWN: Math.PI / 2,
-      LEFT: Math.PI,
-      UP: -Math.PI / 2
-    };
+    ctx.translate(x, y);
 
-    ctx.rotate(angles[direction]);
-    ctx.font = `bold ${cSize}px Arial`;
-    ctx.fillStyle = "#000000";
+    if (dx !== 0) {
+        rotation += dx / radius;
+    } else {
+        rotation += dy / radius;
+    }
+
+    var front = Math.cos(rotation);
+
+    var gradient = ctx.createRadialGradient(
+        -radius * 0.35,
+        -radius * 0.4,
+        radius * 0.1,
+        0,
+        0,
+        radius
+    );
+
+    gradient.addColorStop(0, "#fff9a0");
+    gradient.addColorStop(0.25, "#fff43b");
+    gradient.addColorStop(0.65, "#ffd400");
+    gradient.addColorStop(1, "#d49b00");
+
+    ctx.beginPath();
+
+    ctx.arc(
+        0,
+        0,
+        radius,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fillStyle = gradient;
+
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetX = 8;
+    ctx.shadowOffsetY = 10;
+
+    ctx.fill();
+
+    ctx.shadowColor = "transparent";
+
+    ctx.save();
+
+    ctx.beginPath();
+
+    ctx.arc(
+        0,
+        0,
+        radius,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.clip();
+
+    var numberScale =
+        0.25 + Math.abs(front) * 0.75;
+
+    if (front < 0) {
+        ctx.scale(-numberScale, 1);
+    } else {
+        ctx.scale(numberScale, 1);
+    }
+
+    ctx.fillStyle = "#111111";
+
+    ctx.font = "bold 72px Arial";
+
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("C", 0, 0);
+
+    ctx.fillText(
+        number,
+        0,
+        0
+    );
 
     ctx.restore();
-  }
 
-  function showResult() {
-    ctx.fillStyle = "#000000";
-    ctx.textAlign = "center";
+    ctx.restore();
+}
 
-    ctx.font = "bold 48px Arial";
-    ctx.fillText("TEST COMPLETE", WIDTH / 2, 160);
 
-    const accuracy = TOTAL_TRIALS > 0 ? (correct / TOTAL_TRIALS) * 100 : 0;
-    const avgTime = reactionTimes.length > 0
-      ? reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length
-      : 0;
+function drawBackground() {
 
-    ctx.font = "28px Arial";
-    ctx.fillText(`Correct: ${correct} / ${TOTAL_TRIALS}`, WIDTH / 2, 240);
-    ctx.fillText(`Accuracy: ${accuracy.toFixed(1)} %`, WIDTH / 2, 290);
-    ctx.fillText(`Average Reaction Time: ${avgTime.toFixed(3)} s`, WIDTH / 2, 340);
+    ctx.fillStyle = "#061a36";
 
-    ctx.fillStyle = "#777777";
-    ctx.fillText("Press SPACE to try again", WIDTH / 2, 430);
-  }
+    ctx.fillRect(
+        0,
+        0,
+        W,
+        H
+    );
 
-  window.addEventListener("keydown", (e) => {
-    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
-      e.preventDefault();
+
+    if (state === "playing") {
+
+        ctx.fillStyle = "#ffffff";
+
+        ctx.font = "22px Arial";
+
+        ctx.textAlign = "left";
+
+        ctx.fillText(
+            "Trial: " + (trial + 1) + " / " + totalTrials,
+            25,
+            35
+        );
+
+        ctx.fillText(
+            "Speed: " + speed,
+            25,
+            65
+        );
+
+        ctx.fillText(
+            "Correct: " + correct,
+            25,
+            95
+        );
     }
 
-    if (state === "READY" || state === "RESULT") {
-      if (e.code === "Space") {
-        trial = 0;
-        correct = 0;
-        reactionTimes = [];
-        generateTrialsPool();
-        startCountdown(); // 啟動倒數計時
-      }
-    } else if (state === "PLAYING") {
-      let answer = null;
-      if (e.code === "ArrowUp") answer = "UP";
-      else if (e.code === "ArrowDown") answer = "DOWN";
-      else if (e.code === "ArrowLeft") answer = "LEFT";
-      else if (e.code === "ArrowRight") answer = "RIGHT";
 
-      if (answer !== null) {
-        const reactionTime = (performance.now() - startTime) / 1000;
-        if (answer === direction) {
-          correct++;
-          reactionTimes.push(reactionTime);
+    if (state === "ready") {
+
+        ctx.fillStyle = "#ffffff";
+
+        ctx.textAlign = "center";
+
+        ctx.font = "bold 38px Arial";
+
+        ctx.fillText(
+            "Rolling Ball Reaction Test",
+            W / 2,
+            H / 2 - 45
+        );
+
+        ctx.font = "24px Arial";
+
+        ctx.fillText(
+            "Press SPACE to start",
+            W / 2,
+            H / 2 + 10
+        );
+
+        ctx.font = "18px Arial";
+
+        ctx.fillText(
+            "Use number keys 1 - 8",
+            W / 2,
+            H / 2 + 50
+        );
+    }
+
+
+    if (state === "countdown") {
+
+        ctx.fillStyle = "#ffffff";
+
+        ctx.textAlign = "center";
+
+        ctx.font = "bold 100px Arial";
+
+        ctx.fillText(
+            countdown,
+            W / 2,
+            H / 2
+        );
+    }
+
+
+    if (state === "result") {
+
+        var accuracy =
+            (correct / totalTrials) * 100;
+
+        var average = 0;
+
+        if (reactionTimes.length > 0) {
+
+            var sum = 0;
+
+            for (var i = 0; i < reactionTimes.length; i++) {
+                sum += reactionTimes[i];
+            }
+
+            average =
+                sum / reactionTimes.length;
         }
+
+        ctx.fillStyle = "#ffffff";
+
+        ctx.textAlign = "center";
+
+        ctx.font = "bold 42px Arial";
+
+        ctx.fillText(
+            "Test Complete",
+            W / 2,
+            180
+        );
+
+        ctx.font = "28px Arial";
+
+        ctx.fillText(
+            "Correct: " + correct + " / " + totalTrials,
+            W / 2,
+            250
+        );
+
+        ctx.fillText(
+            "Accuracy: " + accuracy.toFixed(1) + "%",
+            W / 2,
+            300
+        );
+
+        ctx.fillText(
+            "Average Reaction Time: " +
+            average.toFixed(0) +
+            " ms",
+            W / 2,
+            350
+        );
+
+        ctx.fillText(
+            "Final Speed: " + speed,
+            W / 2,
+            400
+        );
+
+        ctx.font = "20px Arial";
+
+        ctx.fillText(
+            "Press SPACE to restart",
+            W / 2,
+            470
+        );
+    }
+}
+
+
+function draw() {
+
+    drawBackground();
+
+    if (state === "playing") {
+        drawBall();
+    }
+}
+
+
+function update() {
+
+    if (state !== "playing") {
+        return;
+    }
+
+    x += dx;
+    y += dy;
+
+    if (outside()) {
+
+        changeSpeed(false);
 
         trial++;
-        if (trial >= TOTAL_TRIALS) {
-          state = "RESULT";
-        } else {
-          newTrial();
-        }
-      }
+
+        newTrial();
     }
-  });
+}
 
-  function loop() {
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    if (state === "READY") {
-      ctx.fillStyle = "#000000";
-      ctx.textAlign = "center";
-      ctx.font = "bold 48px Arial";
-      ctx.fillText("DYNAMIC VISUAL ACUITY TEST", WIDTH / 2, 240);
-      ctx.font = "28px Arial";
-      ctx.fillText("PRESS SPACE TO START", WIDTH / 2, 330);
+function gameLoop() {
 
-    } else if (state === "COUNTDOWN") {
-      // 繪製倒數畫面
-      ctx.fillStyle = "#000000";
-      ctx.textAlign = "center";
-      ctx.font = "bold 96px Arial";
-      ctx.fillText(countdownNumber, WIDTH / 2, HEIGHT / 2 + 30);
+    update();
 
-    } else if (state === "PLAYING") {
-      cX += vx;
-      cY += vy;
+    draw();
 
-      drawC();
+    requestAnimationFrame(gameLoop);
+}
 
-      ctx.fillStyle = "#000000";
-      ctx.textAlign = "left";
-      ctx.font = "28px Arial";
-      ctx.fillText(`Trial ${trial + 1} / ${TOTAL_TRIALS}`, 24, 40);
 
-      if (isOutOfBounds()) {
-        trial++;
-        if (trial >= TOTAL_TRIALS) {
-          state = "RESULT";
-        } else {
-          newTrial();
+document.addEventListener(
+    "keydown",
+    function(event) {
+
+        if (event.code === "Space") {
+
+            event.preventDefault();
+
+            if (
+                state === "ready" ||
+                state === "result"
+            ) {
+                startGame();
+            }
+
+            return;
         }
-      }
 
-    } else if (state === "RESULT") {
-      showResult();
+
+        if (state !== "playing") {
+            return;
+        }
+
+
+        if (
+            event.key >= "1" &&
+            event.key <= "8"
+        ) {
+
+            var value =
+                Number(event.key);
+
+            answer(value);
+        }
     }
+);
 
-    requestAnimationFrame(loop);
-  }
 
-  requestAnimationFrame(loop);
+draw();
+
+gameLoop();
+
 </script>
 
 </body>
